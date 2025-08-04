@@ -1,6 +1,6 @@
 {
   "name": "discord-notion-bot",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Discord bot that syncs with Notion databases to announce new issues and manage status updates",
   "main": "src/bot.js",
   "scripts": {
