@@ -196,6 +196,19 @@ class DatabaseService {
         });
     }
 
+    async updateTrackedIssueId(discordMessageId, newIssueId) {
+        return new Promise((resolve, reject) => {
+            const sql = 'UPDATE tracked_issues SET issue_id = ?, updated_at = CURRENT_TIMESTAMP WHERE discord_message_id = ?';
+            this.db.run(sql, [newIssueId, discordMessageId], (err) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
     async getAllTrackedIssues() {
         return new Promise((resolve, reject) => {
             const sql = `

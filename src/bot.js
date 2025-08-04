@@ -309,14 +309,30 @@ class DiscordNotionBot {
                 if (!currentIssue) {
                     // Issue no longer exists in Notion, remove Discord message
                     console.log(`🗑️ Removing outdated issue: ${tracked.issue_title}`);
-                    await this.removeDiscordMessage(channel, tracked.discord_message_id);
-                    await this.db.removeTrackedIssue(tracked.discord_message_id);
+                    const removed = await this.removeDiscordMessage(channel, tracked.discord_message_id);
+                    if (removed) {
+                        await this.db.removeTrackedIssue(tracked.discord_message_id);
+                    }
                 } else if (currentIssue.status !== tracked.current_status || 
-                          currentIssue.title !== tracked.issue_title) {
+                          currentIssue.title !== tracked.issue_title ||
+                          (currentIssue.issueId && currentIssue.issueId !== tracked.issue_id)) {
                     // Issue exists but has changes, update the message
                     console.log(`🔄 Updating changed issue: ${tracked.issue_title}`);
-                    await this.updateDiscordMessage(channel, tracked.discord_message_id, currentIssue);
-                    await this.db.updateIssueStatus(tracked.notion_page_id, currentIssue.status);
+                    const updated = await this.updateDiscordMessage(channel, tracked.discord_message_id, currentIssue);
+                    
+                    if (updated) {
+                        // Successfully updated, update database
+                        await this.db.updateIssueStatus(tracked.notion_page_id, currentIssue.status);
+                        // Update issue_id if it changed
+                        if (currentIssue.issueId && currentIssue.issueId !== tracked.issue_id) {
+                            await this.db.updateTrackedIssueId(tracked.discord_message_id, currentIssue.issueId);
+                        }
+                    } else {
+                        // Failed to update, remove old tracking and create new message
+                        console.log(`🔄 Creating new message to replace failed update for: ${currentIssue.title}`);
+                        await this.db.removeTrackedIssue(tracked.discord_message_id);
+                        await this.announceNewIssue(currentIssue, connection);
+                    }
                 }
             }
 
@@ -341,10 +357,30 @@ class DiscordNotionBot {
             if (message && message.author.id === this.client.user.id) {
                 await message.delete();
                 console.log(`🗑️ Deleted Discord message: ${messageId}`);
+                return true;
             }
         } catch (error) {
             console.log(`⚠️ Could not delete message ${messageId}: ${error.message}`);
+            // If we can't delete due to permissions, try to edit with a "DELETED" marker
+            if (error.code === 50013) { // Missing Permissions
+                try {
+                    const message = await channel.messages.fetch(messageId);
+                    if (message && message.author.id === this.client.user.id) {
+                        const deletedEmbed = new EmbedBuilder()
+                            .setTitle('🗑️ [DELETED] Issue Removed')
+                            .setDescription('This issue has been removed from the tracker.')
+                            .setColor(0x808080);
+                        await message.edit({ embeds: [deletedEmbed], components: [] });
+                        console.log(`📝 Marked message as deleted: ${messageId}`);
+                        return true;
+                    }
+                } catch (editError) {
+                    console.log(`⚠️ Could not edit message to mark as deleted: ${editError.message}`);
+                }
+            }
+            return false;
         }
+        return false;
     }
 
     async updateDiscordMessage(channel, messageId, issue) {
@@ -359,10 +395,17 @@ class DiscordNotionBot {
                     components: [actionRow]
                 });
                 console.log(`🔄 Updated Discord message for: ${issue.title}`);
+                return true;
             }
         } catch (error) {
             console.log(`⚠️ Could not update message ${messageId}: ${error.message}`);
+            // If we can't update due to permissions, create a new message and remove the old tracking
+            if (error.code === 50013) { // Missing Permissions
+                console.log(`🔄 Creating new message due to permission error for: ${issue.title}`);
+                return false; // Signal that we need to create a new message
+            }
         }
+        return false;
     }
 
     async announceOpenIssues(issues, connection) {
