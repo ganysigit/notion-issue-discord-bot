@@ -51,8 +51,12 @@ class DiscordNotionBot {
                 .setDescription('List all active Notion database connections'),
             
             new SlashCommandBuilder()
-                .setName('bot-status')
-                .setDescription('Show bot status and statistics')
+                                .setName('bot-status')
+                .setDescription('Show bot status and statistics'),
+            
+            new SlashCommandBuilder()
+                .setName('clear-channel')
+                .setDescription('Clear all messages in connected channels and sync updated issues')
         ].map(command => command.toJSON());
 
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
@@ -86,6 +90,10 @@ class DiscordNotionBot {
 
                 case 'bot-status':
                     await this.handleBotStatus(interaction);
+                    break;
+
+                case 'clear-channel':
+                    await this.handleClearChannel(interaction);
                     break;
 
                 default:
@@ -227,6 +235,223 @@ class DiscordNotionBot {
         const hours = Math.floor(seconds / 3600);
         const minutes = Math.floor((seconds % 3600) / 60);
         return `${hours}h ${minutes}m`;
+    }
+
+    async handleClearChannel(interaction) {
+        try {
+            await interaction.deferReply({ ephemeral: true });
+            
+            // Check if user has manage messages permission
+            if (!interaction.member.permissions.has('ManageMessages')) {
+                await interaction.editReply('❌ You need "Manage Messages" permission to use this command.');
+                return;
+            }
+            
+            // Get all active connections from database
+            const connections = await this.database.getConnections();
+            
+            if (connections.length === 0) {
+                await interaction.editReply('❌ No active connections found. Please set up Notion database connections first.');
+                return;
+            }
+            
+            // Validate channels and permissions
+            const validChannels = [];
+            const botMember = interaction.guild.members.cache.get(this.client.user.id);
+            
+            for (const connection of connections) {
+                try {
+                    const channel = await this.client.channels.fetch(connection.discord_channel_id);
+                    if (channel && botMember.permissionsIn(channel).has(['ViewChannel', 'ReadMessageHistory', 'ManageMessages'])) {
+                        validChannels.push({ channel, connection });
+                    }
+                } catch (error) {
+                    console.log(`Could not access channel ${connection.discord_channel_id}:`, error.message);
+                }
+            }
+            
+            if (validChannels.length === 0) {
+                await interaction.editReply('❌ No accessible channels found or missing permissions. I need "View Channel", "Read Message History", and "Manage Messages" permissions.');
+                return;
+            }
+            
+            // Confirm the action
+            const channelList = validChannels.map(({channel}) => `• ${channel}`).join('\n');
+            const confirmEmbed = new EmbedBuilder()
+                .setTitle('⚠️ Confirm Channel Clear & Sync')
+                .setDescription(`Are you sure you want to clear all messages in the following connected channels and sync updated issues?\n\n${channelList}\n\n**This action cannot be undone!**`)
+                .setColor(0xFF6B6B);
+            
+            const confirmRow = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('confirm_clear')
+                        .setLabel('Yes, Clear & Sync')
+                        .setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder()
+                        .setCustomId('cancel_clear')
+                        .setLabel('Cancel')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            await interaction.editReply({
+                embeds: [confirmEmbed],
+                components: [confirmRow]
+            });
+            
+            // Wait for confirmation
+            const filter = (i) => i.user.id === interaction.user.id && (i.customId === 'confirm_clear' || i.customId === 'cancel_clear');
+            const collector = interaction.channel.createMessageComponentCollector({ filter, time: 30000 });
+            
+            collector.on('collect', async (i) => {
+                if (i.customId === 'confirm_clear') {
+                    try {
+                        await i.deferUpdate();
+                    } catch (error) {
+                        console.log('Failed to defer update, interaction may have expired:', error.message);
+                        // Try to reply instead if defer fails
+                        try {
+                            await i.reply({ content: 'Processing channel clear...', ephemeral: true });
+                        } catch (replyError) {
+                            console.log('Failed to reply to interaction:', replyError.message);
+                            return;
+                        }
+                    }
+                    
+                    try {
+                        // Clear messages from all valid channels
+                        let totalDeletedCount = 0;
+                        const channelResults = [];
+                        
+                        for (const { channel, connection } of validChannels) {
+                            let deletedCount = 0;
+                            let fetched;
+                            
+                            do {
+                                fetched = await channel.messages.fetch({ limit: 100 });
+                                if (fetched.size === 0) break;
+                                
+                                // Filter messages older than 14 days (Discord limitation)
+                                const recentMessages = fetched.filter(msg => Date.now() - msg.createdTimestamp < 14 * 24 * 60 * 60 * 1000);
+                                const oldMessages = fetched.filter(msg => Date.now() - msg.createdTimestamp >= 14 * 24 * 60 * 60 * 1000);
+                                
+                                // Bulk delete recent messages
+                                if (recentMessages.size > 0) {
+                                    if (recentMessages.size === 1) {
+                                        await recentMessages.first().delete();
+                                        deletedCount += 1;
+                                    } else {
+                                        await channel.bulkDelete(recentMessages);
+                                        deletedCount += recentMessages.size;
+                                    }
+                                }
+                                
+                                // Delete old messages individually
+                                for (const msg of oldMessages.values()) {
+                                    try {
+                                        await msg.delete();
+                                        deletedCount++;
+                                        // Add small delay to avoid rate limits
+                                        await new Promise(resolve => setTimeout(resolve, 100));
+                                    } catch (error) {
+                                        console.log(`Could not delete message ${msg.id}:`, error.message);
+                                    }
+                                }
+                                
+                            } while (fetched.size >= 100);
+                            
+                            channelResults.push({ channel: channel.name, deletedCount });
+                            totalDeletedCount += deletedCount;
+                            
+                            // Clear tracked issues for this connection
+                            const trackedIssues = await this.db.getTrackedIssuesByConnection(connection.id);
+                            for (const issue of trackedIssues) {
+                                await this.db.removeTrackedIssue(issue.discord_message_id);
+                            }
+                        }
+                        
+                        // Trigger sync for all connections
+                        console.log('🔄 Triggering sync after channel clear...');
+                        await this.performSync();
+                        
+                        const resultText = channelResults.map(r => `• ${r.channel}: ${r.deletedCount} messages`).join('\n');
+                        const successEmbed = new EmbedBuilder()
+                            .setTitle('✅ Channels Cleared & Synced')
+                            .setDescription(`Successfully cleared ${totalDeletedCount} total messages and synced updated issues:\n\n${resultText}`)
+                            .setColor(0x00FF00);
+                        
+                        try {
+                            await interaction.editReply({
+                                embeds: [successEmbed],
+                                components: []
+                            });
+                        } catch (editError) {
+                            console.log('Failed to edit reply with success message:', editError.message);
+                        }
+                        
+                    } catch (error) {
+                        console.error('Error clearing channel:', error);
+                        try {
+                            await interaction.editReply({
+                                content: '❌ An error occurred while clearing the channel. Some messages may not have been deleted.',
+                                embeds: [],
+                                components: []
+                            });
+                        } catch (editError) {
+                            console.log('Failed to edit reply with error message:', editError.message);
+                        }
+                    }
+                } else {
+                    try {
+                        await i.deferUpdate();
+                    } catch (error) {
+                        console.log('Failed to defer update for cancel, interaction may have expired:', error.message);
+                        // Try to reply instead if defer fails
+                        try {
+                            await i.reply({ content: '❌ Channel clear cancelled.', ephemeral: true });
+                            return;
+                        } catch (replyError) {
+                            console.log('Failed to reply to cancel interaction:', replyError.message);
+                            return;
+                        }
+                    }
+                    try {
+                        await interaction.editReply({
+                            content: '❌ Channel clear cancelled.',
+                            embeds: [],
+                            components: []
+                        });
+                    } catch (editError) {
+                        console.log('Failed to edit reply with cancel message:', editError.message);
+                    }
+                }
+                collector.stop();
+            });
+            
+            collector.on('end', async (collected) => {
+                if (collected.size === 0) {
+                    try {
+                        await interaction.editReply({
+                            content: '❌ Channel clear timed out.',
+                            embeds: [],
+                            components: []
+                        });
+                    } catch (editError) {
+                        console.log('Failed to edit reply with timeout message:', editError.message);
+                    }
+                }
+            });
+            
+        } catch (error) {
+            console.error('Error handling clear channel command:', error);
+            const reply = { content: 'An error occurred while processing the clear channel command.', ephemeral: true };
+            
+            if (interaction.deferred) {
+                await interaction.editReply(reply);
+            } else {
+                await interaction.reply(reply);
+            }
+        }
     }
 
     startPolling() {
