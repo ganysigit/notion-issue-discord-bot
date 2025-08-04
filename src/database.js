@@ -38,17 +38,21 @@ class DatabaseService {
     }
 
     // Connection management
-    async addConnection(notionDbId, notionDbName, discordChannelId) {
+    async addConnection(notionDbId, notionDbName, discordChannelId, discordChannelName = '') {
         return new Promise((resolve, reject) => {
             const sql = `
-                INSERT INTO connections (notion_database_id, notion_database_name, discord_channel_id)
-                VALUES (?, ?, ?)
+                INSERT INTO connections (notion_database_id, notion_database_name, discord_channel_id, discord_channel_name)
+                VALUES (?, ?, ?, ?)
             `;
-            this.db.run(sql, [notionDbId, notionDbName, discordChannelId], function(err) {
+            this.db.run(sql, [notionDbId, notionDbName, discordChannelId, discordChannelName], function(err) {
                 if (err) {
-                    reject(err);
+                    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+                        reject(new Error('This Notion database is already connected to this Discord channel'));
+                    } else {
+                        reject(err);
+                    }
                 } else {
-                    resolve({ id: this.lastID, notionDbId, notionDbName, discordChannelId });
+                    resolve({ id: this.lastID, notionDbId, notionDbName, discordChannelId, discordChannelName });
                 }
             });
         });
@@ -95,13 +99,23 @@ class DatabaseService {
 
     async deleteConnection(id) {
         return new Promise((resolve, reject) => {
-            const sql = 'UPDATE connections SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
-            this.db.run(sql, [id], (err) => {
+            // First delete all tracked issues for this connection
+            const deleteTrackedIssuesSql = 'DELETE FROM tracked_issues WHERE connection_id = ?';
+            this.db.run(deleteTrackedIssuesSql, [id], (err) => {
                 if (err) {
                     reject(err);
-                } else {
-                    resolve();
+                    return;
                 }
+                
+                // Then delete the connection itself
+                const deleteConnectionSql = 'DELETE FROM connections WHERE id = ?';
+                this.db.run(deleteConnectionSql, [id], (err) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve();
+                    }
+                });
             });
         });
     }

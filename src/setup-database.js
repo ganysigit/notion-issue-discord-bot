@@ -16,14 +16,15 @@ db.serialize(() => {
     db.run(`
         CREATE TABLE IF NOT EXISTS connections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            notion_database_id TEXT NOT NULL UNIQUE,
+            notion_database_id TEXT NOT NULL,
             notion_database_name TEXT NOT NULL,
             discord_channel_id TEXT NOT NULL,
             discord_channel_name TEXT NOT NULL,
             last_checked DATETIME DEFAULT CURRENT_TIMESTAMP,
             active BOOLEAN DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(notion_database_id, discord_channel_id)
         )
     `);
 
