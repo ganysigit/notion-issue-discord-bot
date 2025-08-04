@@ -155,7 +155,18 @@ class DiscordNotionBot {
 
         } catch (error) {
             console.error('Error handling button interaction:', error);
-            await interaction.followUp({ content: 'An error occurred while updating the issue.', ephemeral: true });
+            
+            let errorMessage = 'An error occurred while updating the issue.';
+            
+            if (error.message.includes('No select properties found')) {
+                errorMessage = '❌ Cannot update status: This Notion page has no status/select properties. Please add a Status field to your Notion database.';
+            } else if (error.message.includes('No status property found')) {
+                errorMessage = '⚠️ No status field found. Using the first available select field instead.';
+            } else if (error.message.includes('Invalid select option')) {
+                errorMessage = `❌ Invalid status option "${newStatus}". Please check your Notion database select options.`;
+            }
+            
+            await interaction.followUp({ content: errorMessage, ephemeral: true });
         }
     }
 
@@ -245,12 +256,12 @@ class DiscordNotionBot {
 
     async syncConnection(connection) {
         try {
-            const lastChecked = connection.last_checked;
-            const newIssues = await this.notion.getNewIssues(connection.notion_database_id, lastChecked);
+            // Get all open issues for announcement
+            const openIssues = await this.notion.getAllOpenIssues(connection.notion_database_id);
             
-            console.log(`📋 Found ${newIssues.length} new issues in ${connection.notion_database_name}`);
+            console.log(`📋 Found ${openIssues.length} open issues in ${connection.notion_database_name}`);
 
-            for (const issue of newIssues) {
+            for (const issue of openIssues) {
                 await this.announceNewIssue(issue, connection);
             }
 
@@ -260,6 +271,56 @@ class DiscordNotionBot {
 
         } catch (error) {
             console.error(`Error syncing connection ${connection.id}:`, error);
+        }
+    }
+
+    async announceOpenIssues(issues, connection) {
+        try {
+            const channel = await this.client.channels.fetch(connection.discord_channel_id);
+            if (!channel) {
+                console.error(`Channel ${connection.discord_channel_id} not found`);
+                return;
+            }
+
+            // Create a comprehensive announcement embed
+            const embed = new EmbedBuilder()
+                .setTitle(`🚨 Open Issues Report - ${connection.notion_database_name}`)
+                .setColor(0xFF6B35)
+                .setDescription(`Found **${issues.length}** open issues that need attention:`)
+                .setTimestamp();
+
+            // Add fields for each issue (limit to 25 fields max)
+            const maxFields = 25;
+            const issuesToShow = issues.slice(0, maxFields);
+            
+            for (const issue of issuesToShow) {
+                const fieldValue = `**Status:** ${issue.status}\n**Priority:** ${issue.priority || 'Not set'}\n[View Issue](${issue.url})`;
+                embed.addFields({
+                    name: `📋 ${issue.title}`,
+                    value: fieldValue,
+                    inline: true
+                });
+            }
+
+            if (issues.length > maxFields) {
+                embed.addFields({
+                    name: '⚠️ Additional Issues',
+                    value: `... and ${issues.length - maxFields} more issues. Check your Notion database for the complete list.`,
+                    inline: false
+                });
+            }
+
+            // Add summary footer
+            embed.setFooter({
+                text: `Total Open Issues: ${issues.length} | Last Updated`,
+                iconURL: this.client.user.displayAvatarURL()
+            });
+
+            await channel.send({ embeds: [embed] });
+            console.log(`📢 Announced ${issues.length} open issues to Discord`);
+
+        } catch (error) {
+            console.error('Error announcing open issues:', error);
         }
     }
 
