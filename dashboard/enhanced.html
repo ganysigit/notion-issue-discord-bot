@@ -249,7 +249,10 @@
 
         /* Form Components */
         .form-group {
+            display: flex;
+            flex-direction: column;
             margin-bottom: 1.5rem;
+            min-width: 0;
         }
 
         .form-label {
@@ -263,6 +266,8 @@
         .form-input {
             display: flex;
             width: 100%;
+            min-width: 0;
+            flex-shrink: 1;
             border-radius: calc(var(--radius));
             border: 1px solid hsl(var(--input));
             background-color: hsl(var(--background));

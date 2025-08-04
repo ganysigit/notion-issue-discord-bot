@@ -38,13 +38,13 @@ class DatabaseService {
     }
 
     // Connection management
-    async addConnection(notionDbId, notionDbName, discordChannelId, discordChannelName = '') {
+    async addConnection(notionDbId, notionDbName, discordChannelId, discordChannelName = '', connectionName = '') {
         return new Promise((resolve, reject) => {
             const sql = `
-                INSERT INTO connections (notion_database_id, notion_database_name, discord_channel_id, discord_channel_name)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO connections (notion_database_id, notion_database_name, discord_channel_id, discord_channel_name, connection_name)
+                VALUES (?, ?, ?, ?, ?)
             `;
-            this.db.run(sql, [notionDbId, notionDbName, discordChannelId, discordChannelName], function(err) {
+            this.db.run(sql, [notionDbId, notionDbName, discordChannelId, discordChannelName, connectionName], function(err) {
                 if (err) {
                     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
                         reject(new Error('This Notion database is already connected to this Discord channel'));
@@ -52,7 +52,7 @@ class DatabaseService {
                         reject(err);
                     }
                 } else {
-                    resolve({ id: this.lastID, notionDbId, notionDbName, discordChannelId, discordChannelName });
+                    resolve({ id: this.lastID, notionDbId, notionDbName, discordChannelId, discordChannelName, connectionName });
                 }
             });
         });

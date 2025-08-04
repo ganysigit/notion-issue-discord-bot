@@ -18,7 +18,7 @@ class DashboardServer {
     setupMiddleware() {
         this.app.use(express.json());
         this.app.use(express.urlencoded({ extended: true }));
-        this.app.use(express.static(path.join(__dirname, '../dashboard/public')));
+        this.app.use(express.static(path.join(__dirname, '../dashboard/dist')));
         
         // CORS for local development
         this.app.use((req, res, next) => {
@@ -30,14 +30,14 @@ class DashboardServer {
     }
 
     setupRoutes() {
-        // Serve main dashboard page
+        // Serve React dashboard
         this.app.get('/', (req, res) => {
-            res.sendFile(path.join(__dirname, '../dashboard/enhanced.html'));
+            res.sendFile(path.join(__dirname, '../dashboard/dist/index.html'));
         });
         
         // Serve original dashboard for comparison
         this.app.get('/original', (req, res) => {
-            res.sendFile(path.join(__dirname, '../dashboard/index.html'));
+            res.sendFile(path.join(__dirname, '../dashboard/enhanced.html'));
         });
 
         // API Routes
@@ -61,7 +61,7 @@ class DashboardServer {
 
     async addConnection(req, res) {
         try {
-            const { notionDatabaseId, discordChannelId } = req.body;
+            const { notionDatabaseId, discordChannelId, connectionName } = req.body;
             
             if (!notionDatabaseId || !discordChannelId) {
                 return res.status(400).json({ 
@@ -86,7 +86,9 @@ class DashboardServer {
             const result = await this.db.addConnection(
                 cleanDbId,
                 dbInfo.title,
-                discordChannelId
+                discordChannelId,
+                '', // discordChannelName - will be populated later
+                connectionName || ''
             );
 
             res.json({ 
