@@ -1,0 +1,34 @@
+{
+  "name": "discord-notion-bot",
+  "version": "1.0.0",
+  "description": "Discord bot that syncs with Notion databases to announce new issues and manage status updates",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "dashboard": "node src/dashboard-server.js",
+    "setup-db": "node src/setup-database.js",
+    "test-db": "node test-database.js",
+    "bot-only": "node src/bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "@notionhq/client": "^2.2.15",
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.6",
+    "dotenv": "^16.3.1",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "keywords": [
+    "discord",
+    "notion",
+    "bot",
+    "automation",
+    "sync"
+  ],
+  "author": "AI Assistant",
+  "license": "MIT"
+}
