@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Activity, Database, Clock, MemoryStick, Plus, Trash2, RefreshCw } from 'lucide-react';
 
 interface Connection {
@@ -348,10 +349,15 @@ const Dashboard: React.FC = () => {
               <div className="space-y-4">
                 {trackedIssues.map((issue) => (
                   <div key={issue.id} className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <h4 className="font-medium">{issue.title}</h4>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h4 className="font-medium">{issue.title}</h4>
+                        <Badge variant={issue.status === 'open' ? 'default' : issue.status === 'closed' ? 'secondary' : 'outline'}>
+                          {issue.status}
+                        </Badge>
+                      </div>
                       <p className="text-sm text-muted-foreground">
-                        Issue #{issue.issue_id} • Status: {issue.status}
+                        Issue #{issue.issue_id}
                       </p>
                       <p className="text-sm text-muted-foreground">
                         Tracked since: {new Date(issue.created_at).toLocaleDateString()}
