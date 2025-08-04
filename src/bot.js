@@ -248,7 +248,7 @@ class DiscordNotionBot {
             }
             
             // Get all active connections from database
-            const connections = await this.database.getConnections();
+            const connections = await this.db.getConnections();
             
             if (connections.length === 0) {
                 await interaction.editReply('❌ No active connections found. Please set up Notion database connections first.');
@@ -305,13 +305,21 @@ class DiscordNotionBot {
             
             collector.on('collect', async (i) => {
                 if (i.customId === 'confirm_clear') {
+                    // Check if interaction is still valid and acknowledge it
+                    if (i.replied || i.deferred) {
+                        console.log('Interaction already handled, skipping...');
+                        return;
+                    }
+                    
                     try {
                         await i.deferUpdate();
                     } catch (error) {
                         console.log('Failed to defer update, interaction may have expired:', error.message);
-                        // Try to reply instead if defer fails
+                        // Try to send an ephemeral message if defer fails
                         try {
-                            await i.reply({ content: 'Processing channel clear...', ephemeral: true });
+                            if (!i.replied && !i.deferred) {
+                                await i.reply({ content: 'Processing your request...', ephemeral: true });
+                            }
                         } catch (replyError) {
                             console.log('Failed to reply to interaction:', replyError.message);
                             return;
@@ -324,49 +332,129 @@ class DiscordNotionBot {
                         const channelResults = [];
                         
                         for (const { channel, connection } of validChannels) {
+                            // Check bot permissions first
+                            const botMember = channel.guild.members.cache.get(this.client.user.id);
+                            const permissions = channel.permissionsFor(botMember);
+                            
+                            if (!permissions.has('ManageMessages')) {
+                                console.log(`❌ Missing ManageMessages permission in ${channel.name}`);
+                                channelResults.push({ channel: channel.name, deletedCount: 0, error: 'Missing ManageMessages permission' });
+                                continue;
+                            }
+                            
+                            if (!permissions.has('ReadMessageHistory')) {
+                                console.log(`❌ Missing ReadMessageHistory permission in ${channel.name}`);
+                                channelResults.push({ channel: channel.name, deletedCount: 0, error: 'Missing ReadMessageHistory permission' });
+                                continue;
+                            }
+                            
+                            console.log(`✅ Bot has required permissions in ${channel.name}`);
+                            
                             let deletedCount = 0;
-                            let fetched;
+                            const deletedMessageIds = new Set();
+                            let lastId;
                             
                             do {
-                                fetched = await channel.messages.fetch({ limit: 100 });
-                                if (fetched.size === 0) break;
-                                
-                                // Filter messages older than 14 days (Discord limitation)
-                                const recentMessages = fetched.filter(msg => Date.now() - msg.createdTimestamp < 14 * 24 * 60 * 60 * 1000);
-                                const oldMessages = fetched.filter(msg => Date.now() - msg.createdTimestamp >= 14 * 24 * 60 * 60 * 1000);
-                                
-                                // Bulk delete recent messages
-                                if (recentMessages.size > 0) {
-                                    if (recentMessages.size === 1) {
-                                        await recentMessages.first().delete();
-                                        deletedCount += 1;
-                                    } else {
-                                        await channel.bulkDelete(recentMessages);
-                                        deletedCount += recentMessages.size;
-                                    }
+                                console.log(`📥 Fetching messages from ${channel.name}...`);
+                                const fetchOptions = { limit: 100 };
+                                if (lastId) {
+                                    fetchOptions.before = lastId;
                                 }
                                 
-                                // Delete old messages individually
-                                for (const msg of oldMessages.values()) {
+                                const fetched = await channel.messages.fetch(fetchOptions);
+                                console.log(`📥 Fetched ${fetched.size} messages from ${channel.name}`);
+                                
+                                if (fetched.size === 0) {
+                                    console.log(`📭 No more messages to fetch from ${channel.name}`);
+                                    break;
+                                }
+                                
+                                // Convert Collection to Array for easier processing
+                                const messages = Array.from(fetched.values());
+                                lastId = messages[messages.length - 1].id;
+                                
+                                // Separate messages by age (Discord's 2-week bulk delete limitation)
+                                const now = Date.now();
+                                const twoWeeksAgo = now - (14 * 24 * 60 * 60 * 1000);
+                                
+                                const recentMessages = messages.filter(msg => msg.createdTimestamp > twoWeeksAgo);
+                                const oldMessages = messages.filter(msg => msg.createdTimestamp <= twoWeeksAgo);
+                                
+                                console.log(`📊 Recent messages: ${recentMessages.length}, Old messages: ${oldMessages.length}`);
+                                
+                                // Bulk delete recent messages (Discord API limitation: max 100, must be < 2 weeks old)
+                                if (recentMessages.length > 0) {
+                                    console.log(`🗑️ Attempting to delete ${recentMessages.length} recent messages`);
                                     try {
-                                        await msg.delete();
-                                        deletedCount++;
-                                        // Add small delay to avoid rate limits
-                                        await new Promise(resolve => setTimeout(resolve, 100));
+                                        if (recentMessages.length === 1) {
+                                            const msg = recentMessages[0];
+                                            console.log(`🗑️ Deleting single recent message: ${msg.id}`);
+                                            await msg.delete();
+                                            deletedMessageIds.add(msg.id);
+                                            deletedCount += 1;
+                                            console.log(`✅ Successfully deleted message: ${msg.id}`);
+                                        } else {
+                                            // Use bulkDelete for multiple recent messages
+                                            console.log(`🗑️ Attempting bulk delete of ${recentMessages.length} messages`);
+                                            const deletedMessages = await channel.bulkDelete(recentMessages, true); // filterOld = true
+                                            deletedMessages.forEach(msg => deletedMessageIds.add(msg.id));
+                                            deletedCount += deletedMessages.size;
+                                            console.log(`✅ Successfully bulk deleted ${deletedMessages.size} messages`);
+                                        }
                                     } catch (error) {
-                                        console.log(`Could not delete message ${msg.id}:`, error.message);
+                                        console.log(`❌ Failed to bulk delete recent messages:`, error.message);
+                                        // Fallback to individual deletion for recent messages
+                                        console.log(`🔄 Falling back to individual deletion for recent messages`);
+                                        for (const msg of recentMessages) {
+                                            try {
+                                                console.log(`🗑️ Deleting recent message individually: ${msg.id}`);
+                                                await msg.delete();
+                                                deletedMessageIds.add(msg.id);
+                                                deletedCount++;
+                                                console.log(`✅ Successfully deleted recent message: ${msg.id}`);
+                                                await new Promise(resolve => setTimeout(resolve, 100));
+                                            } catch (error) {
+                                                console.log(`❌ Could not delete recent message ${msg.id}:`, error.message);
+                                            }
+                                        }
                                     }
                                 }
                                 
-                            } while (fetched.size >= 100);
+                                // Delete old messages individually (>2 weeks old cannot be bulk deleted)
+                                if (oldMessages.length > 0) {
+                                    console.log(`🗑️ Attempting to delete ${oldMessages.length} old messages individually`);
+                                    for (const msg of oldMessages) {
+                                        try {
+                                            console.log(`🗑️ Deleting old message: ${msg.id}`);
+                                            await msg.delete();
+                                            deletedMessageIds.add(msg.id);
+                                            deletedCount++;
+                                            console.log(`✅ Successfully deleted old message: ${msg.id}`);
+                                            // Add delay to avoid rate limits
+                                            await new Promise(resolve => setTimeout(resolve, 200));
+                                        } catch (error) {
+                                            console.log(`❌ Could not delete old message ${msg.id}:`, error.message);
+                                        }
+                                    }
+                                }
+                                
+                                // If we fetched less than 100 messages, we've reached the end
+                                if (fetched.size < 100) {
+                                    console.log(`📭 Reached end of messages in ${channel.name}`);
+                                    break;
+                                }
+                            } while (true);
                             
+                            console.log(`📊 Channel ${channel.name}: Deleted ${deletedCount} messages total`);
                             channelResults.push({ channel: channel.name, deletedCount });
                             totalDeletedCount += deletedCount;
                             
-                            // Clear tracked issues for this connection
+                            // Only remove tracked issues for messages that were actually deleted
                             const trackedIssues = await this.db.getTrackedIssuesByConnection(connection.id);
                             for (const issue of trackedIssues) {
-                                await this.db.removeTrackedIssue(issue.discord_message_id);
+                                if (deletedMessageIds.has(issue.discord_message_id)) {
+                                    await this.db.removeTrackedIssue(issue.discord_message_id);
+                                }
                             }
                         }
                         
@@ -402,14 +490,21 @@ class DiscordNotionBot {
                         }
                     }
                 } else {
+                    // Handle cancel button
+                    if (i.replied || i.deferred) {
+                        console.log('Cancel interaction already handled, skipping...');
+                        return;
+                    }
+                    
                     try {
                         await i.deferUpdate();
                     } catch (error) {
                         console.log('Failed to defer update for cancel, interaction may have expired:', error.message);
-                        // Try to reply instead if defer fails
+                        // Try to send an ephemeral message if defer fails
                         try {
-                            await i.reply({ content: '❌ Channel clear cancelled.', ephemeral: true });
-                            return;
+                            if (!i.replied && !i.deferred) {
+                                await i.reply({ content: 'Cancelled.', ephemeral: true });
+                            }
                         } catch (replyError) {
                             console.log('Failed to reply to cancel interaction:', replyError.message);
                             return;

@@ -9,7 +9,9 @@
     "dashboard": "node src/dashboard-server.js",
     "setup-db": "node src/setup-database.js",
     "test-db": "node test-database.js",
-    "bot-only": "node src/bot.js"
+    "bot-only": "node src/bot.js",
+    "test": "jest",
+    "test:deletion": "jest test/deletion.test.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
@@ -20,7 +22,8 @@
     "node-cron": "^3.0.3"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "jest": "^29.7.0"
   },
   "keywords": [
     "discord",
