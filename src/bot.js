@@ -256,14 +256,16 @@ class DiscordNotionBot {
 
     async syncConnection(connection) {
         try {
-            // Get all open issues for announcement
+            // Get all open issues from Notion
             const openIssues = await this.notion.getAllOpenIssues(connection.notion_database_id);
-            
             console.log(`📋 Found ${openIssues.length} open issues in ${connection.notion_database_name}`);
 
-            for (const issue of openIssues) {
-                await this.announceNewIssue(issue, connection);
-            }
+            // Get current tracked issues for this connection
+            const trackedIssues = await this.db.getTrackedIssuesByConnection(connection.id);
+            console.log(`🗃️ Found ${trackedIssues.length} tracked issues in database`);
+
+            // Perform comprehensive sync
+            await this.performChannelSync(connection, openIssues, trackedIssues);
 
             // Update last checked timestamp
             const now = new Date().toISOString();
@@ -271,6 +273,95 @@ class DiscordNotionBot {
 
         } catch (error) {
             console.error(`Error syncing connection ${connection.id}:`, error);
+        }
+    }
+
+    async performChannelSync(connection, currentIssues, trackedIssues) {
+        try {
+            const channel = await this.client.channels.fetch(connection.discord_channel_id);
+            if (!channel) {
+                console.error(`Channel ${connection.discord_channel_id} not found`);
+                return;
+            }
+
+            console.log(`🔄 Performing comprehensive sync for ${connection.notion_database_name}`);
+
+            // Create maps for easier comparison
+            const currentIssueMap = new Map();
+            currentIssues.forEach(issue => {
+                if (issue.issueId) {
+                    currentIssueMap.set(issue.issueId, issue);
+                } else {
+                    currentIssueMap.set(issue.id, issue);
+                }
+            });
+
+            const trackedIssueMap = new Map();
+            trackedIssues.forEach(tracked => {
+                const key = tracked.issue_id || tracked.notion_page_id;
+                trackedIssueMap.set(key, tracked);
+            });
+
+            // Find discrepancies and remove outdated messages
+            for (const [key, tracked] of trackedIssueMap) {
+                const currentIssue = currentIssueMap.get(key);
+                
+                if (!currentIssue) {
+                    // Issue no longer exists in Notion, remove Discord message
+                    console.log(`🗑️ Removing outdated issue: ${tracked.issue_title}`);
+                    await this.removeDiscordMessage(channel, tracked.discord_message_id);
+                    await this.db.removeTrackedIssue(tracked.discord_message_id);
+                } else if (currentIssue.status !== tracked.current_status || 
+                          currentIssue.title !== tracked.issue_title) {
+                    // Issue exists but has changes, update the message
+                    console.log(`🔄 Updating changed issue: ${tracked.issue_title}`);
+                    await this.updateDiscordMessage(channel, tracked.discord_message_id, currentIssue);
+                    await this.db.updateIssueStatus(tracked.notion_page_id, currentIssue.status);
+                }
+            }
+
+            // Add new issues that aren't tracked yet
+            for (const [key, issue] of currentIssueMap) {
+                if (!trackedIssueMap.has(key)) {
+                    console.log(`➕ Adding new issue: ${issue.title}`);
+                    await this.announceNewIssue(issue, connection);
+                }
+            }
+
+            console.log(`✅ Channel sync completed for ${connection.notion_database_name}`);
+
+        } catch (error) {
+            console.error('Error performing channel sync:', error);
+        }
+    }
+
+    async removeDiscordMessage(channel, messageId) {
+        try {
+            const message = await channel.messages.fetch(messageId);
+            if (message && message.author.id === this.client.user.id) {
+                await message.delete();
+                console.log(`🗑️ Deleted Discord message: ${messageId}`);
+            }
+        } catch (error) {
+            console.log(`⚠️ Could not delete message ${messageId}: ${error.message}`);
+        }
+    }
+
+    async updateDiscordMessage(channel, messageId, issue) {
+        try {
+            const message = await channel.messages.fetch(messageId);
+            if (message && message.author.id === this.client.user.id) {
+                const updatedEmbed = this.createIssueEmbed(issue, true);
+                const actionRow = this.createActionRow(issue.issueId || issue.id);
+                
+                await message.edit({
+                    embeds: [updatedEmbed],
+                    components: [actionRow]
+                });
+                console.log(`🔄 Updated Discord message for: ${issue.title}`);
+            }
+        } catch (error) {
+            console.log(`⚠️ Could not update message ${messageId}: ${error.message}`);
         }
     }
 

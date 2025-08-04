@@ -213,6 +213,32 @@ class DatabaseService {
             });
         });
     }
+
+    async getTrackedIssuesByConnection(connectionId) {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT * FROM tracked_issues WHERE connection_id = ?';
+            this.db.all(sql, [connectionId], (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(rows);
+                }
+            });
+        });
+    }
+
+    async removeTrackedIssue(discordMessageId) {
+        return new Promise((resolve, reject) => {
+            const sql = 'DELETE FROM tracked_issues WHERE discord_message_id = ?';
+            this.db.run(sql, [discordMessageId], (err) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
 }
 
 module.exports = DatabaseService;
