@@ -1,1 +1,2 @@
-do not push to github without my consent
+- do not push to github without my consent.
+- always use conventional commit messages. https://www.conventionalcommits.org/en/v1.0.0/

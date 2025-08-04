@@ -32,6 +32,11 @@ class DashboardServer {
     setupRoutes() {
         // Serve main dashboard page
         this.app.get('/', (req, res) => {
+            res.sendFile(path.join(__dirname, '../dashboard/enhanced.html'));
+        });
+        
+        // Serve original dashboard for comparison
+        this.app.get('/original', (req, res) => {
             res.sendFile(path.join(__dirname, '../dashboard/index.html'));
         });
 
