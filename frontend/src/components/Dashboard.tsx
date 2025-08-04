@@ -26,8 +26,8 @@ interface Connection {
 interface TrackedIssue {
   id: string;
   issue_id: string;
-  title: string;
-  status: string;
+  issue_title: string;
+  current_status: string;
   created_at: string;
 }
 
@@ -351,9 +351,9 @@ const Dashboard: React.FC = () => {
                   <div key={issue.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <h4 className="font-medium">{issue.title}</h4>
-                        <Badge variant={issue.status === 'open' ? 'default' : issue.status === 'closed' ? 'secondary' : 'outline'}>
-                          {issue.status}
+                        <h4 className="font-medium">{issue.issue_title}</h4>
+                        <Badge variant={issue.current_status?.toLowerCase() === 'open' ? 'default' : issue.current_status?.toLowerCase() === 'closed' ? 'secondary' : 'outline'}>
+                          {issue.current_status}
                         </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">
