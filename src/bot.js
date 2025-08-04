@@ -383,7 +383,7 @@ class DiscordNotionBot {
             .setColor(statusColor)
             .addFields(
                 { name: 'Status', value: issue.status, inline: true },
-                { name: 'Issue ID', value: issue.id.slice(-8), inline: true }
+                { name: 'Issue ID', value: issue.issueId || issue.id.slice(-8), inline: true }
             )
             .setTimestamp();
 
