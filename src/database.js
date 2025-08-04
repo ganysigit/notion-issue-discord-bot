@@ -107,13 +107,13 @@ class DatabaseService {
     }
 
     // Tracked issues management
-    async addTrackedIssue(notionPageId, discordMessageId, connectionId, issueTitle, status = 'Open') {
+    async addTrackedIssue(notionPageId, discordMessageId, connectionId, issueTitle, status = 'Open', issueId = null) {
         return new Promise((resolve, reject) => {
             const sql = `
-                INSERT INTO tracked_issues (notion_page_id, discord_message_id, connection_id, current_status, issue_title)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO tracked_issues (notion_page_id, discord_message_id, connection_id, current_status, issue_title, issue_id)
+                VALUES (?, ?, ?, ?, ?, ?)
             `;
-            this.db.run(sql, [notionPageId, discordMessageId, connectionId, status, issueTitle], function(err) {
+            this.db.run(sql, [notionPageId, discordMessageId, connectionId, status, issueTitle, issueId], function(err) {
                 if (err) {
                     reject(err);
                 } else {
@@ -121,6 +121,26 @@ class DatabaseService {
                 }
             });
         });
+    }
+
+    async getTrackedIssueByIssueId(issueId, connectionId) {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT * FROM tracked_issues WHERE issue_id = ? AND connection_id = ?';
+            this.db.get(sql, [issueId, connectionId], (err, row) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(row);
+                }
+            });
+        });
+    }
+
+    async isIssueAlreadyAnnounced(issueId, connectionId) {
+        if (!issueId) return false;
+        
+        const existingIssue = await this.getTrackedIssueByIssueId(issueId, connectionId);
+        return !!existingIssue;
     }
 
     async getTrackedIssueByNotionId(notionPageId) {

@@ -218,11 +218,33 @@ class NotionService {
         // Try to find status property (could be 'Status', 'State', etc.)
         let status = 'Open';
         const statusProperty = Object.values(properties).find(prop => 
-            prop.type === 'select' && 
+            (prop.type === 'status' || prop.type === 'select') && 
             (prop.name?.toLowerCase().includes('status') || prop.name?.toLowerCase().includes('state'))
         );
-        if (statusProperty && statusProperty.select) {
-            status = statusProperty.select.name;
+        if (statusProperty) {
+            if (statusProperty.type === 'status' && statusProperty.status) {
+                status = statusProperty.status.name;
+            } else if (statusProperty.type === 'select' && statusProperty.select) {
+                status = statusProperty.select.name;
+            }
+        }
+
+        // Try to find Issue ID property
+        let issueId = null;
+        const issueIdProperty = Object.entries(properties).find(([key, prop]) => 
+            key.toLowerCase().includes('issue id') || 
+            key.toLowerCase().includes('issueid') || 
+            key.toLowerCase() === 'id'
+        );
+        if (issueIdProperty) {
+            const [, prop] = issueIdProperty;
+            if (prop.type === 'rich_text' && prop.rich_text.length > 0) {
+                issueId = prop.rich_text[0].plain_text;
+            } else if (prop.type === 'number' && prop.number !== null) {
+                issueId = prop.number.toString();
+            } else if (prop.type === 'title' && prop.title.length > 0) {
+                issueId = prop.title[0].plain_text;
+            }
         }
 
         // Try to find description or content
@@ -240,6 +262,7 @@ class NotionService {
             title,
             status,
             description,
+            issueId,
             url: page.url,
             created_time: page.created_time,
             last_edited_time: page.last_edited_time,

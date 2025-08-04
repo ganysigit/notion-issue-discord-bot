@@ -326,6 +326,22 @@ class DiscordNotionBot {
 
     async announceNewIssue(issue, connection) {
         try {
+            // Check if this issue has already been announced using Issue ID or Notion page ID
+            if (issue.issueId) {
+                const isAlreadyAnnounced = await this.db.isIssueAlreadyAnnounced(issue.issueId, connection.id);
+                if (isAlreadyAnnounced) {
+                    console.log(`⏭️ Skipping duplicate issue: ${issue.title} (Issue ID: ${issue.issueId})`);
+                    return;
+                }
+            }
+
+            // Also check by Notion page ID as fallback
+            const existingIssue = await this.db.getTrackedIssueByNotionId(issue.id);
+            if (existingIssue) {
+                console.log(`⏭️ Skipping duplicate issue: ${issue.title} (already tracked by Notion ID)`);
+                return;
+            }
+
             const channel = await this.client.channels.fetch(connection.discord_channel_id);
             if (!channel) {
                 console.error(`Channel ${connection.discord_channel_id} not found`);
@@ -346,10 +362,11 @@ class DiscordNotionBot {
                 message.id,
                 connection.id,
                 issue.title,
-                issue.status
+                issue.status,
+                issue.issueId
             );
 
-            console.log(`📢 Announced new issue: ${issue.title}`);
+            console.log(`📢 Announced new issue: ${issue.title}${issue.issueId ? ` (Issue ID: ${issue.issueId})` : ''}`);
         } catch (error) {
             console.error('Error announcing new issue:', error);
         }

@@ -36,12 +36,22 @@ db.serialize(() => {
             connection_id INTEGER NOT NULL,
             current_status TEXT DEFAULT 'Open',
             issue_title TEXT NOT NULL,
+            issue_id TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (connection_id) REFERENCES connections (id),
             UNIQUE(notion_page_id, discord_message_id)
         )
     `);
+
+    // Add issue_id column if it doesn't exist (for existing databases)
+    db.run(`
+        ALTER TABLE tracked_issues ADD COLUMN issue_id TEXT
+    `, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('Error adding issue_id column:', err);
+        }
+    });
 
     console.log('Database tables created successfully!');
 });
