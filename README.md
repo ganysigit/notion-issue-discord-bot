@@ -6,10 +6,12 @@ A powerful Discord bot that connects your Notion databases with Discord channels
 
 - 🔔 **Automatic Announcements**: Get notified in Discord when new issues are created in Notion
 - 🔄 **Two-way Sync**: Update issue status (Open/Fixed) directly from Discord
+- 🧹 **Channel Clearing**: Clear all messages from Discord channels connected to Notion databases
 - 📊 **Local Dashboard**: Manage connections and monitor bot activity through a web interface
 - 🎯 **Multiple Databases**: Connect multiple Notion databases to different Discord channels
 - ⚡ **Real-time Updates**: 2-minute polling ensures quick notifications
 - 🛡️ **Error Handling**: Robust error handling and logging
+- 🔧 **Git Integration**: Pre-configured Git rules and aliases for streamlined development
 
 ## Prerequisites 📋
 
@@ -31,6 +33,8 @@ A powerful Discord bot that connects your Notion databases with Discord channels
    - Use Slash Commands
    - Embed Links
    - Add Reactions
+   - Manage Messages (required for `/clear` command)
+   - Read Message History (required for `/clear` command)
 6. Invite the bot to your server with these permissions
 
 ### 2. Notion Integration Setup
@@ -105,6 +109,16 @@ The bot supports these slash commands:
 - `/sync-now` - Manually trigger a sync with all connected Notion databases
 - `/list-connections` - Show all active database connections
 - `/bot-status` - Display bot status and statistics
+- `/clear` - Clear all messages from channels connected to Notion databases
+
+#### Message Deletion Features
+
+The `/clear` command provides comprehensive message deletion:
+- ✅ Clears all messages from connected Discord channels
+- ✅ Handles Discord's 2-week bulk deletion limitation
+- ✅ Includes proper permission checking (ManageMessages, ReadMessageHistory)
+- ✅ Provides detailed logging and error handling
+- ✅ Triggers full sync after deletion to refresh with current Notion issues
 
 ### Notion Database Requirements
 
@@ -135,8 +149,11 @@ bot-discord-notion/
 │   └── setup-database.js   # Database initialization
 ├── dashboard/
 │   └── index.html          # Dashboard web interface
+├── test/
+│   └── deletion.test.js    # Unit tests for deletion functionality
 ├── data/
 │   └── bot.db              # SQLite database (created automatically)
+├── .gitconfig-rules.md     # Git configuration rules and aliases
 ├── package.json
 ├── .env.example
 └── README.md
@@ -186,6 +203,16 @@ npm run dev
 
 This starts the application with nodemon for auto-restart on file changes.
 
+### Testing
+
+```bash
+# Run deletion functionality tests
+npm run test:deletion
+
+# Run all tests
+npm test
+```
+
 ### Database Management
 
 ```bash
@@ -193,13 +220,41 @@ This starts the application with nodemon for auto-restart on file changes.
 npm run setup-db
 ```
 
+### Git Configuration
+
+The project includes pre-configured Git rules and aliases. See `.gitconfig-rules.md` for:
+- User profile configuration
+- Commit and push automation
+- Useful Git aliases (`git cap`, `git cmp`)
+- Best practices for version control
+
+#### Quick Git Commands
+```bash
+# Commit and push in one command
+git cap
+
+# Commit with message and push
+git cmp "your commit message"
+```
+
+## Version History 📋
+
+### v0.1 (Latest)
+- ✅ Fixed Discord message deletion functionality
+- ✅ Added comprehensive permission checking
+- ✅ Improved message pagination and API compliance
+- ✅ Enhanced error handling and logging
+- ✅ Added unit tests for deletion features
+- ✅ Configured Git rules and aliases
+
 ## Contributing 🤝
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+4. Test thoroughly (run `npm test`)
+5. Follow the Git configuration rules in `.gitconfig-rules.md`
+6. Submit a pull request
 
 ## License 📄
 
