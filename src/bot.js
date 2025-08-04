@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require('discord.js');
 const cron = require('node-cron');
 const DatabaseService = require('./database');
 const NotionService = require('./notion-service');
@@ -158,12 +158,12 @@ class DiscordNotionBot {
             formattedIssue.status = newStatus; // Ensure status is updated
             
             // Update Discord message with all fields
-            const updatedEmbed = this.createIssueEmbed(formattedIssue, true);
+            const updatedMessage = this.createIssueMessage(formattedIssue, true);
 
             const updatedRow = this.createActionRow(trackedIssue.notion_page_id, newStatus);
 
             await interaction.editReply({
-                embeds: [updatedEmbed],
+                content: updatedMessage,
                 components: [updatedRow]
             });
 
@@ -198,20 +198,18 @@ class DiscordNotionBot {
                 return;
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle('🔗 Active Notion Connections')
-                .setColor(0x0099FF)
-                .setTimestamp();
-
+            let message = `# 🔗 Active Notion Connections\n\n`;
+            
             connections.forEach((conn, index) => {
-                embed.addFields({
-                    name: `${index + 1}. ${conn.notion_database_name}`,
-                    value: `**Channel:** <#${conn.discord_channel_id}>\n**Last Checked:** ${new Date(conn.last_checked).toLocaleString()}`,
-                    inline: true
-                });
+                message += `## ${index + 1}. ${conn.notion_database_name}\n`;
+                message += `**Channel:** <#${conn.discord_channel_id}>\n`;
+                message += `**Last Checked:** ${new Date(conn.last_checked).toLocaleString()}\n\n`;
             });
+            
+            const timestamp = new Date().toLocaleString();
+            message += `-# Updated: ${timestamp}`;
 
-            await interaction.reply({ embeds: [embed], ephemeral: true });
+            await interaction.reply({ content: message, ephemeral: true });
         } catch (error) {
             console.error('Error listing connections:', error);
             await interaction.reply({ content: 'Error fetching connections.', ephemeral: true });
@@ -223,19 +221,17 @@ class DiscordNotionBot {
             const connections = await this.db.getConnections();
             const trackedIssues = await this.db.getAllTrackedIssues();
             
-            const embed = new EmbedBuilder()
-                .setTitle('🤖 Bot Status')
-                .setColor(0x00FF00)
-                .addFields(
-                    { name: 'Active Connections', value: connections.length.toString(), inline: true },
-                    { name: 'Tracked Issues', value: trackedIssues.length.toString(), inline: true },
-                    { name: 'Polling Interval', value: `${this.pollingInterval} minutes`, inline: true },
-                    { name: 'Uptime', value: this.formatUptime(process.uptime()), inline: true },
-                    { name: 'Dashboard', value: `http://localhost:${process.env.DASHBOARD_PORT || 3000}`, inline: true }
-                )
-                .setTimestamp();
+            let message = `# 🤖 Bot Status\n\n`;
+            message += `**Active Connections:** ${connections.length}\n`;
+            message += `**Tracked Issues:** ${trackedIssues.length}\n`;
+            message += `**Polling Interval:** ${this.pollingInterval} minutes\n`;
+            message += `**Uptime:** ${this.formatUptime(process.uptime())}\n`;
+            message += `**Dashboard:** http://localhost:${process.env.DASHBOARD_PORT || 3000}\n\n`;
+            
+            const timestamp = new Date().toLocaleString();
+            message += `-# Updated: ${timestamp}`;
 
-            await interaction.reply({ embeds: [embed], ephemeral: true });
+            await interaction.reply({ content: message, ephemeral: true });
         } catch (error) {
             console.error('Error getting bot status:', error);
             await interaction.reply({ content: 'Error fetching bot status.', ephemeral: true });
@@ -290,10 +286,11 @@ class DiscordNotionBot {
             
             // Confirm the action
             const channelList = validChannels.map(({channel}) => `• ${channel}`).join('\n');
+            
             const confirmEmbed = new EmbedBuilder()
                 .setTitle('⚠️ Confirm Channel Clear & Sync')
-                .setDescription(`Are you sure you want to clear all messages in the following connected channels and sync updated issues?\n\n${channelList}\n\n**This action cannot be undone!**`)
-                .setColor(0xFF6B6B);
+                .setDescription(`Are you sure you want to clear all messages in the following connected channels and sync updated issues?\n\n${channelList}\n\n**⚠️ This action cannot be undone!**`)
+                .setColor(0xFFCC00); // Warning yellow color
             
             const confirmRow = new ActionRowBuilder()
                 .addComponents(
@@ -473,16 +470,24 @@ class DiscordNotionBot {
                         await this.performSync();
                         
                         const resultText = channelResults.map(r => `• ${r.channel}: ${r.deletedCount} messages`).join('\n');
-                        const successEmbed = new EmbedBuilder()
-                            .setTitle('✅ Channels Cleared & Synced')
-                            .setDescription(`Successfully cleared ${totalDeletedCount} total messages and synced updated issues:\n\n${resultText}`)
-                            .setColor(0x00FF00);
+                        let successMessage = `# ✅ Channels Cleared & Synced\n\n`;
+                        successMessage += `Successfully cleared **${totalDeletedCount}** total messages and synced updated issues:\n\n`;
+                        successMessage += `${resultText}`;
                         
                         try {
                             await interaction.editReply({
-                                embeds: [successEmbed],
+                                content: successMessage,
                                 components: []
                             });
+                            
+                            // Auto-delete the message after 5 seconds
+                            setTimeout(async () => {
+                                try {
+                                    await interaction.deleteReply();
+                                } catch (deleteError) {
+                                    console.log('Failed to auto-delete success message:', deleteError.message);
+                                }
+                            }, 5000);
                         } catch (editError) {
                             console.log('Failed to edit reply with success message:', editError.message);
                         }
@@ -492,7 +497,6 @@ class DiscordNotionBot {
                         try {
                             await interaction.editReply({
                                 content: '❌ An error occurred while clearing the channel. Some messages may not have been deleted.',
-                                embeds: [],
                                 components: []
                             });
                         } catch (editError) {
@@ -523,7 +527,6 @@ class DiscordNotionBot {
                     try {
                         await interaction.editReply({
                             content: '❌ Channel clear cancelled.',
-                            embeds: [],
                             components: []
                         });
                     } catch (editError) {
@@ -538,7 +541,6 @@ class DiscordNotionBot {
                     try {
                         await interaction.editReply({
                             content: '❌ Channel clear timed out.',
-                            embeds: [],
                             components: []
                         });
                     } catch (editError) {
@@ -753,11 +755,8 @@ class DiscordNotionBot {
                 try {
                     const message = await channel.messages.fetch(messageId);
                     if (message && message.author.id === this.client.user.id) {
-                        const deletedEmbed = new EmbedBuilder()
-                            .setTitle('🗑️ [DELETED] Issue Removed')
-                            .setDescription('This issue has been removed from the tracker.')
-                            .setColor(0x808080);
-                        await message.edit({ embeds: [deletedEmbed], components: [] });
+                        const deletedMessage = `# 🗑️ [DELETED] Issue Removed\n\nThis issue has been removed from the tracker.`;
+                        await message.edit({ content: deletedMessage, components: [] });
                         console.log(`📝 Marked message as deleted: ${messageId}`);
                         return true;
                     }
@@ -774,11 +773,11 @@ class DiscordNotionBot {
         try {
             const message = await channel.messages.fetch(messageId);
             if (message && message.author.id === this.client.user.id) {
-                const updatedEmbed = this.createIssueEmbed(issue, true);
+                const updatedMessageContent = this.createIssueMessage(issue, true);
                 const actionRow = this.createActionRow(issue.issueId || issue.id);
                 
                 await message.edit({
-                    embeds: [updatedEmbed],
+                    content: updatedMessageContent,
                     components: [actionRow]
                 });
                 console.log(`🔄 Updated Discord message for: ${issue.title}`);
@@ -803,41 +802,35 @@ class DiscordNotionBot {
                 return;
             }
 
-            // Create a comprehensive announcement embed
-            const embed = new EmbedBuilder()
-                .setTitle(`🚨 Open Issues Report - ${connection.notion_database_name}`)
-                .setColor(0xFF6B35)
-                .setDescription(`Found **${issues.length}** open issues that need attention:`)
-                .setTimestamp();
+            // Create a comprehensive announcement message
+            let message = `# 🚨 Open Issues Report - ${connection.notion_database_name}\n\n`;
+            message += `Found **${issues.length}** open issues that need attention:\n\n`;
 
-            // Add fields for each issue (limit to 25 fields max)
-            const maxFields = 25;
-            const issuesToShow = issues.slice(0, maxFields);
+            // Add each issue (limit to avoid message length limits)
+            const maxIssues = 10; // Reduced to avoid Discord's 2000 character limit
+            const issuesToShow = issues.slice(0, maxIssues);
             
             for (const issue of issuesToShow) {
-                const fieldValue = `**Status:** ${issue.status}\n**Priority:** ${issue.priority || 'Not set'}\n[View Issue](${issue.url})`;
-                embed.addFields({
-                    name: `📋 ${issue.title}`,
-                    value: fieldValue,
-                    inline: true
-                });
+                const statusEmoji = issue.status === 'Fixed' ? '✅' : issue.status === 'Open' ? '🔴' : '🔵';
+                message += `## 📋 ${issue.title}\n`;
+                message += `**Status:** ${statusEmoji} ${issue.status}\n`;
+                message += `**Priority:** ${issue.priority || 'Not set'}\n`;
+                if (issue.url) {
+                    message += `[**View Issue**](${issue.url})\n`;
+                }
+                message += `\n`;
             }
 
-            if (issues.length > maxFields) {
-                embed.addFields({
-                    name: '⚠️ Additional Issues',
-                    value: `... and ${issues.length - maxFields} more issues. Check your Notion database for the complete list.`,
-                    inline: false
-                });
+            if (issues.length > maxIssues) {
+                message += `### ⚠️ Additional Issues\n`;
+                message += `... and **${issues.length - maxIssues}** more issues. Check your Notion database for the complete list.\n\n`;
             }
 
             // Add summary footer
-            embed.setFooter({
-                text: `Total Open Issues: ${issues.length} | Last Updated`,
-                iconURL: this.client.user.displayAvatarURL()
-            });
+            const timestamp = new Date().toLocaleString();
+            message += `-# Total Open Issues: ${issues.length} | Last Updated: ${timestamp}`;
 
-            await channel.send({ embeds: [embed] });
+            await channel.send({ content: message });
             console.log(`📢 Announced ${issues.length} open issues to Discord`);
 
         } catch (error) {
@@ -871,11 +864,11 @@ class DiscordNotionBot {
                 return;
             }
 
-            const embed = this.createIssueEmbed(issue);
+            const messageContent = this.createIssueMessage(issue);
             const actionRow = this.createActionRow(issue.id, issue.status);
 
             const message = await channel.send({
-                embeds: [embed],
+                content: messageContent,
                 components: [actionRow]
             });
 
@@ -896,43 +889,47 @@ class DiscordNotionBot {
         }
     }
 
-    createIssueEmbed(issue, isUpdate = false) {
-        const statusColor = issue.status === 'Fixed' ? 0x00FF00 : 
-                           issue.status === 'Open' ? 0xFF9900 : 0x0099FF;
+    createIssueMessage(issue, isUpdate = false) {
+        const statusEmoji = issue.status === 'Fixed' ? '✅' : 
+                           issue.status === 'Open' ? '🔴' : '🔵';
         
-        const embed = new EmbedBuilder()
-            .setTitle(`${isUpdate ? '🔄 ' : '🆕 '}${issue.title}`)
-            .setColor(statusColor)
-            .addFields(
-                { name: 'Status', value: issue.status, inline: true },
-                { name: 'Issue ID', value: issue.issueId || issue.id.slice(-8), inline: true }
-            )
-            .setTimestamp();
-
+        let message = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n## ${isUpdate ? '🔄 ' : '🆕 '}${issue.title}\n\n`;
+        
+        // Status and basic info
+        message += `**Status:** ${statusEmoji} ${issue.status}\n`;
+        message += `**Issue ID:** \`${issue.issueId || issue.id.slice(-8)}\`\n`;
+        
         // Add severity if available
         if (issue.severity) {
-            embed.addFields({ name: 'Severity', value: issue.severity, inline: true });
+            message += `**Severity:** ${issue.severity}\n`;
         }
-
+        
         // Add project if available
         if (issue.project) {
-            embed.addFields({ name: 'Project', value: issue.project, inline: true });
+            message += `**Project:** ${issue.project}\n`;
         }
-
+        
         // Add files & media if available
         if (issue.filesMedia) {
-            embed.addFields({ name: 'Files & Media', value: issue.filesMedia, inline: true });
+            message += `**Files & Media:** ${issue.filesMedia}\n`;
         }
-
+        
+        // Add description if available
         if (issue.description) {
-            embed.setDescription(issue.description.slice(0, 400) + (issue.description.length > 400 ? '...' : ''));
+            const truncatedDesc = issue.description.slice(0, 400) + (issue.description.length > 400 ? '...' : '');
+            message += `\n> ${truncatedDesc.replace(/\n/g, '\n> ')}\n`;
         }
-
+        
+        // Add URL if available (wrapped in angle brackets to suppress embed)
         if (issue.url) {
-            embed.setURL(issue.url);
+            message += `\n[**View in Notion**](<${issue.url}>)`;
         }
-
-        return embed;
+        
+        // Add timestamp
+        const timestamp = new Date().toLocaleString();
+        message += `\n\n-# Last updated: ${timestamp}`;
+        
+        return message;
     }
 
     createActionRow(issueId, currentStatus) {
