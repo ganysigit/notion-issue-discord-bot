@@ -146,7 +146,8 @@ class DiscordNotionBot {
             const updatedEmbed = this.createIssueEmbed({
                 title: trackedIssue.issue_title,
                 status: newStatus,
-                id: trackedIssue.notion_page_id
+                id: trackedIssue.notion_page_id,
+                issueId: trackedIssue.issue_id || trackedIssue.notion_page_id.slice(-8)
             }, true);
 
             const updatedRow = this.createActionRow(trackedIssue.notion_page_id, newStatus);
