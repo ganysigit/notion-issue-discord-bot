@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Activity, Database, Clock, MemoryStick, Plus, Trash2, RefreshCw } from 'lucide-react';
 
@@ -350,11 +350,22 @@ const Dashboard: React.FC = () => {
                 {trackedIssues.map((issue) => (
                   <div key={issue.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h4 className="font-medium">{issue.issue_title}</h4>
-                        <Badge variant={issue.current_status?.toLowerCase() === 'open' ? 'default' : issue.current_status?.toLowerCase() === 'closed' ? 'secondary' : 'outline'}>
-                          {issue.current_status}
-                        </Badge>
+                      <div className="mb-2">
+                        <div className="flex items-start justify-between mb-1">
+                          <Badge 
+                            variant={
+                              issue.current_status?.toLowerCase() === 'open' 
+                                ? 'destructive' 
+                                : issue.current_status?.toLowerCase() === 'closed' 
+                                ? 'secondary' 
+                                : 'outline'
+                            }
+                            className="mb-1"
+                          >
+                            {issue.current_status}
+                          </Badge>
+                        </div>
+                        <h4 className="font-medium text-lg leading-tight">{issue.issue_title}</h4>
                       </div>
                       <p className="text-sm text-muted-foreground">
                         Issue #{issue.issue_id}
