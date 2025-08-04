@@ -56,7 +56,7 @@ class DiscordNotionBot {
             
             new SlashCommandBuilder()
                 .setName('clear-channel')
-                .setDescription('Clear all messages in connected channels and sync updated issues')
+                .setDescription('🗑️ Clear all messages in connected channels and sync updated issues (Clear & Sync)')
         ].map(command => command.toJSON());
 
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
@@ -93,6 +93,7 @@ class DiscordNotionBot {
                     break;
 
                 case 'clear-channel':
+                    console.log('🗑️ Clear-channel command triggered by user:', interaction.user.tag);
                     await this.handleClearChannel(interaction);
                     break;
 
@@ -114,12 +115,21 @@ class DiscordNotionBot {
     async handleButtonInteraction(interaction) {
         const [action, issueId] = interaction.customId.split('_');
         
+        // Skip clear channel confirmation buttons - they're handled by the collector
+        if (action === 'confirm' || action === 'cancel') {
+            return;
+        }
+        
         try {
             await interaction.deferUpdate();
             
             const trackedIssue = await this.db.getTrackedIssueByDiscordId(interaction.message.id);
             if (!trackedIssue) {
-                await interaction.followUp({ content: 'Issue not found in database.', ephemeral: true });
+                console.log(`⚠️ Button interaction for unknown Discord message: ${interaction.message.id}`);
+                await interaction.followUp({ 
+                    content: 'This issue is no longer tracked. The message may have been cleared or the database was reset.', 
+                    ephemeral: true 
+                });
                 return;
             }
 
@@ -239,7 +249,9 @@ class DiscordNotionBot {
     }
 
     async handleClearChannel(interaction) {
+        console.log('🗑️ handleClearChannel method called by user:', interaction.user.tag);
         try {
+            console.log('🗑️ Clear channel command initiated');
             await interaction.deferReply({ ephemeral: true });
             
             // Check if user has manage messages permission
@@ -450,13 +462,10 @@ class DiscordNotionBot {
                             channelResults.push({ channel: channel.name, deletedCount });
                             totalDeletedCount += deletedCount;
                             
-                            // Only remove tracked issues for messages that were actually deleted
-                            const trackedIssues = await this.db.getTrackedIssuesByConnection(connection.id);
-                            for (const issue of trackedIssues) {
-                                if (deletedMessageIds.has(issue.discord_message_id)) {
-                                    await this.db.removeTrackedIssue(issue.discord_message_id);
-                                }
-                            }
+                            // Remove ALL tracked issues for this connection since we're clearing the channel
+                            // This ensures database consistency even if some messages failed to delete
+                            const clearedIssuesCount = await this.db.clearTrackedIssuesByConnection(connection.id);
+                            console.log(`🗃️ Cleared ${clearedIssuesCount} tracked issues from database for connection ${connection.id}`);
                         }
                         
                         // Trigger sync for all connections
@@ -606,21 +615,42 @@ class DiscordNotionBot {
             }
 
             console.log(`🔄 Performing comprehensive sync for ${connection.notion_database_name}`);
+            console.log(`📊 Current issues: ${currentIssues.length}, Tracked issues: ${trackedIssues.length}`);
+            
+            // Validate that all tracked issues have valid Discord messages
+            await this.validateTrackedIssues(connection, channel, trackedIssues);
+            
+            // Refresh tracked issues list after validation cleanup
+            trackedIssues = await this.db.getTrackedIssuesByConnection(connection.id);
+            console.log(`📊 After validation - Tracked issues: ${trackedIssues.length}`);
 
             // Create maps for easier comparison
             const currentIssueMap = new Map();
             currentIssues.forEach(issue => {
-                if (issue.issueId) {
-                    currentIssueMap.set(issue.issueId, issue);
-                } else {
+                // Primary key: issueId if available, fallback to Notion page ID
+                const primaryKey = issue.issueId || issue.id;
+                currentIssueMap.set(primaryKey, issue);
+                console.log(`📋 Mapping current issue: "${issue.title}" -> Key: ${primaryKey}${issue.issueId ? ` (Issue ID: ${issue.issueId})` : ' (No Issue ID)'}`);
+                
+                // Also map by Notion page ID for fallback matching
+                if (issue.issueId && issue.id !== issue.issueId) {
                     currentIssueMap.set(issue.id, issue);
+                    console.log(`📋 Also mapping by Notion ID: "${issue.title}" -> Key: ${issue.id}`);
                 }
             });
 
             const trackedIssueMap = new Map();
             trackedIssues.forEach(tracked => {
-                const key = tracked.issue_id || tracked.notion_page_id;
-                trackedIssueMap.set(key, tracked);
+                // Primary key: issue_id if available, fallback to notion_page_id
+                const primaryKey = tracked.issue_id || tracked.notion_page_id;
+                trackedIssueMap.set(primaryKey, tracked);
+                console.log(`🗃️ Mapping tracked issue: "${tracked.issue_title}" -> Key: ${primaryKey}${tracked.issue_id ? ` (Issue ID: ${tracked.issue_id})` : ' (No Issue ID)'}`);
+                
+                // Also map by notion_page_id for fallback matching
+                if (tracked.issue_id && tracked.notion_page_id !== tracked.issue_id) {
+                    trackedIssueMap.set(tracked.notion_page_id, tracked);
+                    console.log(`🗃️ Also mapping by Notion ID: "${tracked.issue_title}" -> Key: ${tracked.notion_page_id}`);
+                }
             });
 
             // Find discrepancies and remove outdated messages
@@ -658,17 +688,53 @@ class DiscordNotionBot {
             }
 
             // Add new issues that aren't tracked yet
+            const processedIssues = new Set();
             for (const [key, issue] of currentIssueMap) {
-                if (!trackedIssueMap.has(key)) {
-                    console.log(`➕ Adding new issue: ${issue.title}`);
+                // Skip if we've already processed this issue (avoid duplicates from dual mapping)
+                if (processedIssues.has(issue.id)) {
+                    continue;
+                }
+                
+                // Check if this issue is tracked using any possible key
+                const isTracked = trackedIssueMap.has(key) || 
+                                 (issue.issueId && trackedIssueMap.has(issue.issueId)) ||
+                                 trackedIssueMap.has(issue.id);
+                
+                if (!isTracked) {
+                    console.log(`➕ Adding new issue: ${issue.title} (Key: ${key})`);
                     await this.announceNewIssue(issue, connection);
                 }
+                
+                processedIssues.add(issue.id);
             }
 
             console.log(`✅ Channel sync completed for ${connection.notion_database_name}`);
 
         } catch (error) {
             console.error('Error performing channel sync:', error);
+        }
+    }
+
+    async validateTrackedIssues(connection, channel, trackedIssues) {
+        console.log(`🔍 Validating ${trackedIssues.length} tracked issues for orphaned entries...`);
+        let removedCount = 0;
+        
+        for (const tracked of trackedIssues) {
+            try {
+                // Try to fetch the Discord message
+                await channel.messages.fetch(tracked.discord_message_id);
+            } catch (error) {
+                // Message doesn't exist, remove from database
+                console.log(`🗑️ Removing orphaned tracked issue: ${tracked.issue_title} (Discord ID: ${tracked.discord_message_id})`);
+                await this.db.removeTrackedIssue(tracked.discord_message_id);
+                removedCount++;
+            }
+        }
+        
+        if (removedCount > 0) {
+            console.log(`🧹 Cleaned up ${removedCount} orphaned tracked issues`);
+        } else {
+            console.log(`✅ No orphaned tracked issues found`);
         }
     }
 
@@ -825,7 +891,8 @@ class DiscordNotionBot {
 
             console.log(`📢 Announced new issue: ${issue.title}${issue.issueId ? ` (Issue ID: ${issue.issueId})` : ''}`);
         } catch (error) {
-            console.error('Error announcing new issue:', error);
+            console.error(`❌ Error announcing new issue "${issue.title}":`, error);
+            // Don't throw the error to prevent stopping the sync process for other issues
         }
     }
 

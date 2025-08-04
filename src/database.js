@@ -252,6 +252,19 @@ class DatabaseService {
             });
         });
     }
+
+    async clearTrackedIssuesByConnection(connectionId) {
+        return new Promise((resolve, reject) => {
+            const sql = 'DELETE FROM tracked_issues WHERE connection_id = ?';
+            this.db.run(sql, [connectionId], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes); // Return number of deleted rows
+                }
+            });
+        });
+    }
 }
 
 module.exports = DatabaseService;
