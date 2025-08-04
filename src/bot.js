@@ -152,13 +152,13 @@ class DiscordNotionBot {
             // Update in database
             await this.db.updateIssueStatus(trackedIssue.notion_page_id, newStatus);
 
-            // Update Discord message
-            const updatedEmbed = this.createIssueEmbed({
-                title: trackedIssue.issue_title,
-                status: newStatus,
-                id: trackedIssue.notion_page_id,
-                issueId: trackedIssue.issue_id || trackedIssue.notion_page_id.slice(-8)
-            }, true);
+            // Fetch updated issue data from Notion to get all fields
+            const updatedIssueData = await this.notion.getPage(trackedIssue.notion_page_id);
+            const formattedIssue = this.notion.formatPageData(updatedIssueData);
+            formattedIssue.status = newStatus; // Ensure status is updated
+            
+            // Update Discord message with all fields
+            const updatedEmbed = this.createIssueEmbed(formattedIssue, true);
 
             const updatedRow = this.createActionRow(trackedIssue.notion_page_id, newStatus);
 
@@ -909,8 +909,23 @@ class DiscordNotionBot {
             )
             .setTimestamp();
 
+        // Add severity if available
+        if (issue.severity) {
+            embed.addFields({ name: 'Severity', value: issue.severity, inline: true });
+        }
+
+        // Add project if available
+        if (issue.project) {
+            embed.addFields({ name: 'Project', value: issue.project, inline: true });
+        }
+
+        // Add files & media if available
+        if (issue.filesMedia) {
+            embed.addFields({ name: 'Files & Media', value: issue.filesMedia, inline: true });
+        }
+
         if (issue.description) {
-            embed.setDescription(issue.description.slice(0, 200) + (issue.description.length > 200 ? '...' : ''));
+            embed.setDescription(issue.description.slice(0, 400) + (issue.description.length > 400 ? '...' : ''));
         }
 
         if (issue.url) {

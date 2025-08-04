@@ -268,12 +268,61 @@ class NotionService {
 
         // Try to find description or content
         let description = '';
-        const descProperty = Object.values(properties).find(prop => 
-            prop.type === 'rich_text' && 
-            (prop.name?.toLowerCase().includes('description') || prop.name?.toLowerCase().includes('content'))
-        );
-        if (descProperty && descProperty.rich_text.length > 0) {
-            description = descProperty.rich_text[0].plain_text;
+        const descProperty = Object.entries(properties).find(([key, prop]) => {
+            const keyLower = key.toLowerCase();
+            return prop.type === 'rich_text' && 
+                   (keyLower.includes('description') || keyLower.includes('content') || keyLower.includes('bug'));
+        });
+        if (descProperty && descProperty[1].rich_text.length > 0) {
+            description = descProperty[1].rich_text[0].plain_text;
+        }
+
+        // Try to find severity property
+        let severity = null;
+        const severityProperty = Object.entries(properties).find(([key, prop]) => {
+            const keyLower = key.toLowerCase();
+            return (prop.type === 'select' || prop.type === 'multi_select') && 
+                   (keyLower.includes('severity') || keyLower.includes('priority') || keyLower.includes('level'));
+        });
+        if (severityProperty) {
+            const [key, prop] = severityProperty;
+            if (prop.type === 'select' && prop.select) {
+                severity = prop.select.name;
+            } else if (prop.type === 'multi_select' && prop.multi_select.length > 0) {
+                severity = prop.multi_select.map(item => item.name).join(', ');
+            }
+        }
+
+        // Try to find project property
+        let project = null;
+        const projectProperty = Object.entries(properties).find(([key, prop]) => {
+            const keyLower = key.toLowerCase();
+            return (prop.type === 'select' || prop.type === 'multi_select' || prop.type === 'relation') && 
+                   (keyLower.includes('project') || keyLower.includes('component') || keyLower.includes('module'));
+        });
+        if (projectProperty) {
+            const [key, prop] = projectProperty;
+            if (prop.type === 'select' && prop.select) {
+                project = prop.select.name;
+            } else if (prop.type === 'multi_select' && prop.multi_select.length > 0) {
+                project = prop.multi_select.map(item => item.name).join(', ');
+            } else if (prop.type === 'relation' && prop.relation.length > 0) {
+                project = `${prop.relation.length} related item(s)`;
+            }
+        }
+
+        // Try to find files & media property
+        let filesMedia = null;
+        const filesProperty = Object.entries(properties).find(([key, prop]) => {
+            const keyLower = key.toLowerCase();
+            return prop.type === 'files' && 
+                   (keyLower.includes('file') || keyLower.includes('media') || keyLower.includes('attachment') || keyLower.includes('image'));
+        });
+        if (filesProperty) {
+            const [key, prop] = filesProperty;
+            if (prop.files && prop.files.length > 0) {
+                filesMedia = `${prop.files.length} file(s) attached`;
+            }
         }
 
         return {
@@ -282,6 +331,9 @@ class NotionService {
             status,
             description,
             issueId,
+            severity,
+            project,
+            filesMedia,
             url: page.url,
             created_time: page.created_time,
             last_edited_time: page.last_edited_time,
