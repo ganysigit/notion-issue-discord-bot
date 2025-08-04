@@ -7,7 +7,7 @@ A powerful Discord bot that connects your Notion databases with Discord channels
 - 🔔 **Automatic Announcements**: Get notified in Discord when new issues are created in Notion
 - 🔄 **Two-way Sync**: Update issue status (Open/Fixed) directly from Discord
 - 🧹 **Channel Clearing**: Clear all messages from Discord channels connected to Notion databases
-- 📊 **Local Dashboard**: Manage connections and monitor bot activity through a web interface
+- 📊 **Modern React Dashboard**: Manage connections and monitor bot activity through a responsive web interface built with React, TypeScript, and shadcn/ui
 - 🎯 **Multiple Databases**: Connect multiple Notion databases to different Discord channels
 - ⚡ **Real-time Updates**: 2-minute polling ensures quick notifications
 - 🛡️ **Error Handling**: Robust error handling and logging
@@ -81,7 +81,7 @@ A powerful Discord bot that connects your Notion databases with Discord channels
 ### Starting the Bot
 
 ```bash
-# Start both bot and dashboard
+# Start both bot and dashboard (production)
 npm start
 
 # Development mode with auto-restart
@@ -89,18 +89,25 @@ npm run dev
 
 # Start only the dashboard
 npm run dashboard
+
+# Frontend development (React with HMR)
+cd frontend && npm run dev
+
+# Build frontend for production
+cd frontend && npm run build
 ```
 
 ### Dashboard Access
 
-Open your browser and go to: `http://localhost:3000`
+Open your browser and go to: `http://127.0.0.1:3000`
 
-The dashboard allows you to:
+The dashboard features a modern React interface with:
 - Add new Notion database connections
 - Test Notion database access
-- View active connections
-- Monitor tracked issues
+- View active connections with real-time status
+- Monitor tracked issues with enhanced UI
 - Check bot status and uptime
+- Responsive design with shadcn/ui components
 
 ### Discord Commands
 
@@ -147,8 +154,15 @@ bot-discord-notion/
 │   ├── database.js         # SQLite database operations
 │   ├── dashboard-server.js # Express.js dashboard server
 │   └── setup-database.js   # Database initialization
+├── frontend/
+│   ├── src/
+│   │   ├── components/     # React components with shadcn/ui
+│   │   ├── lib/           # Utility functions
+│   │   └── main.tsx       # React application entry
+│   ├── package.json       # Frontend dependencies
+│   └── vite.config.ts     # Vite configuration
 ├── dashboard/
-│   └── index.html          # Dashboard web interface
+│   └── dist/              # Production build output
 ├── test/
 │   └── deletion.test.js    # Unit tests for deletion functionality
 ├── data/
@@ -158,6 +172,22 @@ bot-discord-notion/
 ├── .env.example
 └── README.md
 ```
+
+## Frontend Architecture 🎨
+
+The dashboard features a modern React frontend with:
+
+- **React 18** with TypeScript for type safety
+- **Vite** for fast development and optimized builds
+- **shadcn/ui** component library for consistent design
+- **Tailwind CSS** for utility-first styling
+- **Hot Module Replacement** for instant development feedback
+- **Production builds** served by the Express backend
+
+### Development vs Production
+
+- **Development**: Frontend runs on `http://127.0.0.1:5173` with HMR
+- **Production**: Built files served from `http://127.0.0.1:3000`
 
 ## API Endpoints 🌐
 
@@ -187,6 +217,8 @@ The dashboard server provides these API endpoints:
 3. **Dashboard not loading**
    - Check if port 3000 is available
    - Try changing DASHBOARD_PORT in .env
+   - For development, frontend runs on `http://127.0.0.1:5173`
+   - For production, access `http://127.0.0.1:3000`
    - Check console for error messages
 
 ### Logs
@@ -198,10 +230,14 @@ Bot logs are displayed in the console. Set `LOG_LEVEL=debug` in `.env` for detai
 ### Running in Development Mode
 
 ```bash
+# Backend development (auto-restart)
 npm run dev
+
+# Frontend development (React with HMR)
+cd frontend && npm run dev
 ```
 
-This starts the application with nodemon for auto-restart on file changes.
+Backend runs with nodemon for auto-restart. Frontend uses Vite with Hot Module Replacement for instant updates.
 
 ### Testing
 

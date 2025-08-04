@@ -29,7 +29,7 @@ class DiscordNotionApp {
             console.log('✅ Discord bot started successfully');
             
             console.log('\n🎉 Application started successfully!');
-            console.log('📊 Dashboard: http://localhost:' + (process.env.DASHBOARD_PORT || 3000));
+            console.log('📊 Dashboard: http://127.0.0.1:' + (process.env.DASHBOARD_PORT || 3000));
             console.log('🤖 Bot is now online and monitoring Notion databases');
             
             // Setup graceful shutdown

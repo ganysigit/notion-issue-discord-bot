@@ -254,8 +254,8 @@ class DashboardServer {
         try {
             await this.db.connect();
             
-            this.app.listen(this.port, () => {
-                console.log(`🌐 Dashboard server running at http://localhost:${this.port}`);
+            this.app.listen(this.port, '127.0.0.1', () => {
+                console.log(`🌐 Dashboard server running at http://127.0.0.1:${this.port}`);
                 console.log(`📊 Access the dashboard to manage Notion connections`);
             });
         } catch (error) {
