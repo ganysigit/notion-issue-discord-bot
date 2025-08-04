@@ -123,7 +123,7 @@ class NotionService {
                 ]
             });
 
-            return response.results.map(page => this.formatPageData(page));
+            return Promise.all(response.results.map(page => this.formatPageData(page)));
         } catch (error) {
             console.error('Error fetching new issues:', error);
             throw error;
@@ -161,7 +161,7 @@ class NotionService {
                 ]
             });
 
-            return response.results.map(page => this.formatPageData(page));
+            return Promise.all(response.results.map(page => this.formatPageData(page)));
         } catch (error) {
             console.error('Error fetching updated issues:', error);
             throw error;
@@ -184,7 +184,7 @@ class NotionService {
                          }
                      ]
                  });
-                return response.results.map(page => this.formatPageData(page));
+                return Promise.all(response.results.map(page => this.formatPageData(page)));
             }
             
             const response = await this.notion.databases.query({
@@ -198,14 +198,14 @@ class NotionService {
                  ]
              });
 
-            return response.results.map(page => this.formatPageData(page));
+            return Promise.all(response.results.map(page => this.formatPageData(page)));
         } catch (error) {
             console.error('Error fetching all open issues:', error);
             return [];
         }
     }
 
-    formatPageData(page) {
+    async formatPageData(page) {
         const properties = page.properties;
         
         // Try to find title property (could be 'Name', 'Title', or first title property)
@@ -307,7 +307,14 @@ class NotionService {
             } else if (prop.type === 'multi_select' && prop.multi_select.length > 0) {
                 project = prop.multi_select.map(item => item.name).join(', ');
             } else if (prop.type === 'relation' && prop.relation.length > 0) {
-                project = `${prop.relation.length} related item(s)`;
+                // Fetch the actual titles of related pages
+                try {
+                    const relationTitles = await this.getRelationTitles(prop.relation);
+                    project = relationTitles.length > 0 ? relationTitles.join(', ') : `${prop.relation.length} related item(s)`;
+                } catch (error) {
+                    console.warn('Failed to fetch relation titles:', error.message);
+                    project = `${prop.relation.length} related item(s)`;
+                }
             }
         }
 
@@ -424,7 +431,7 @@ class NotionService {
                 properties: updateObject
             });
 
-            return this.formatPageData(response);
+            return await this.formatPageData(response);
         } catch (error) {
             console.error('Error updating page status:', error);
             throw error;
@@ -434,11 +441,43 @@ class NotionService {
     async getPage(pageId) {
         try {
             const page = await this.notion.pages.retrieve({ page_id: pageId });
-            return this.formatPageData(page);
+            return await this.formatPageData(page);
         } catch (error) {
             console.error('Error fetching page:', error);
             throw error;
         }
+    }
+
+    // Helper method to fetch titles of related pages
+    async getRelationTitles(relationArray) {
+        const titles = [];
+        
+        for (const relation of relationArray) {
+            try {
+                const page = await this.notion.pages.retrieve({ page_id: relation.id });
+                
+                // Extract title from the page properties
+                let title = 'Untitled';
+                const properties = page.properties;
+                
+                // Look for title property (usually the first property or one with type 'title')
+                const titleProperty = Object.entries(properties).find(([key, prop]) => 
+                    prop.type === 'title' && prop.title && prop.title.length > 0
+                );
+                
+                if (titleProperty) {
+                    const [key, prop] = titleProperty;
+                    title = prop.title.map(t => t.plain_text).join('');
+                }
+                
+                titles.push(title);
+            } catch (error) {
+                console.warn(`Failed to fetch relation page ${relation.id}:`, error.message);
+                titles.push('Unknown');
+            }
+        }
+        
+        return titles;
     }
 
     // Utility method to test database access

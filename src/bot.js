@@ -154,7 +154,7 @@ class DiscordNotionBot {
 
             // Fetch updated issue data from Notion to get all fields
             const updatedIssueData = await this.notion.getPage(trackedIssue.notion_page_id);
-            const formattedIssue = this.notion.formatPageData(updatedIssueData);
+            const formattedIssue = await this.notion.formatPageData(updatedIssueData);
             formattedIssue.status = newStatus; // Ensure status is updated
             
             // Update Discord message with all fields
