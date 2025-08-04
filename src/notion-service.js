@@ -229,22 +229,41 @@ class NotionService {
             }
         }
 
-        // Try to find Issue ID property
+        // Try to find Issue ID property with various naming conventions
         let issueId = null;
-        const issueIdProperty = Object.entries(properties).find(([key, prop]) => 
-            key.toLowerCase().includes('issue id') || 
-            key.toLowerCase().includes('issueid') || 
-            key.toLowerCase() === 'id'
-        );
+        const issueIdProperty = Object.entries(properties).find(([key, prop]) => {
+            const keyLower = key.toLowerCase().replace(/[\s_-]/g, '');
+            return keyLower === 'issueid' || 
+                   keyLower === 'id' || 
+                   keyLower === 'issuenum' || 
+                   keyLower === 'issuenumber' || 
+                   keyLower === 'ticketid' || 
+                   keyLower === 'taskid';
+        });
+        
         if (issueIdProperty) {
-            const [, prop] = issueIdProperty;
-            if (prop.type === 'rich_text' && prop.rich_text.length > 0) {
-                issueId = prop.rich_text[0].plain_text;
+            const [key, prop] = issueIdProperty;
+            console.log(`📋 Found Issue ID property: "${key}" (type: ${prop.type})`);
+            
+            if (prop.type === 'unique_id' && prop.unique_id && prop.unique_id.number !== null) {
+                issueId = prop.unique_id.prefix ? `${prop.unique_id.prefix}-${prop.unique_id.number}` : prop.unique_id.number.toString();
+            } else if (prop.type === 'rich_text' && prop.rich_text.length > 0) {
+                issueId = prop.rich_text[0].plain_text.trim();
             } else if (prop.type === 'number' && prop.number !== null) {
                 issueId = prop.number.toString();
             } else if (prop.type === 'title' && prop.title.length > 0) {
-                issueId = prop.title[0].plain_text;
+                issueId = prop.title[0].plain_text.trim();
+            } else if (prop.type === 'formula' && prop.formula && prop.formula.string) {
+                issueId = prop.formula.string.trim();
             }
+            
+            if (issueId) {
+                console.log(`✅ Extracted Issue ID: "${issueId}"`);
+            } else {
+                console.log(`⚠️ Issue ID property found but no value extracted`);
+            }
+        } else {
+            console.log(`⚠️ No Issue ID property found. Available properties: ${Object.keys(properties).join(', ')}`);
         }
 
         // Try to find description or content
